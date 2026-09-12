@@ -16,15 +16,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Show Windows environment
+      - name: Show repository structure
         shell: powershell
         run: |
-          Write-Host "=== Windows Environment ==="
-          Write-Host "OS: $env:OS"
-          Write-Host "Computer: $env:COMPUTERNAME"
-          Write-Host "User: $env:USERNAME"
-          Write-Host "PowerShell:"
-          $PSVersionTable.PSVersion
+          Write-Host "========================================"
+          Write-Host "        REPOSITORY STRUCTURE"
+          Write-Host "========================================"
+
+          Get-ChildItem -Force
+
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "        ALL PROJECT FILES"
+          Write-Host "========================================"
+
+          Get-ChildItem -Recurse -File |
+            Where-Object {
+              $_.FullName -notmatch "\\.git\\" -and
+              $_.FullName -notmatch "\\__pycache__\\"
+            } |
+            ForEach-Object {
+              Write-Host $_.FullName
+            }
 
       - name: Check Python
         shell: powershell
@@ -66,138 +79,170 @@ jobs:
             python -m pip install .
           }
           else {
-            Write-Host "No Python dependency file found."
+            Write-Host "No dependency file found."
           }
 
-      - name: Inspect project
+      - name: Find Python project
         shell: powershell
         run: |
-          Write-Host "=== Repository root ==="
-          Get-ChildItem -Force
-
-          Write-Host ""
-          Write-Host "=== Python files ==="
+          Write-Host "========================================"
+          Write-Host "        SEARCHING PYTHON PROJECT"
+          Write-Host "========================================"
 
           $pythonFiles = Get-ChildItem -Recurse -Filter *.py -File |
             Where-Object {
               $_.FullName -notmatch "\\.git\\" -and
-              $_.FullName -notmatch "\\__pycache__\\" -and
-              $_.FullName -notmatch "\\\.venv\\"
+              $_.FullName -notmatch "\\__pycache__\\"
             }
 
-          if ($pythonFiles) {
-            $pythonFiles | ForEach-Object {
-              Write-Host $_.FullName
-            }
-          }
-          else {
-            Write-Host "NO PYTHON FILES FOUND"
+          if ($pythonFiles.Count -eq 0) {
+            Write-Error "NO PYTHON FILES FOUND IN REPOSITORY"
+            exit 1
           }
 
-      - name: Inspect project entry points
+          Write-Host ""
+          Write-Host "Python files found:"
+          $pythonFiles | ForEach-Object {
+            Write-Host "PYTHON: $($_.FullName)"
+          }
+
+      - name: Detect application entry point
         shell: powershell
         run: |
-          Write-Host "=== Searching for project entry points ==="
+          Write-Host "========================================"
+          Write-Host "        DETECTING ENTRY POINT"
+          Write-Host "========================================"
 
-          $candidates = @(
+          $priorityNames = @(
             "main.py",
             "app.py",
             "run.py",
             "server.py",
-            "streaming_engine.py"
+            "streaming_engine.py",
+            "launcher.py",
+            "start.py"
           )
 
-          $found = @()
+          $entryPoint = $null
 
-          foreach ($candidate in $candidates) {
-            $matches = Get-ChildItem -Recurse -Filter $candidate -File -ErrorAction SilentlyContinue |
+          foreach ($name in $priorityNames) {
+            $match = Get-ChildItem -Recurse -Filter $name -File -ErrorAction SilentlyContinue |
               Where-Object {
                 $_.FullName -notmatch "\\.git\\" -and
-                $_.FullName -notmatch "\\__pycache__\\" -and
-                $_.FullName -notmatch "\\\.venv\\"
-              }
-
-            foreach ($match in $matches) {
-              $found += $match.FullName
-              Write-Host "FOUND: $($match.FullName)"
-            }
-          }
-
-          if ($found.Count -eq 0) {
-            Write-Host "No standard entry point found."
-          }
-
-      - name: Run project diagnostic
-        shell: powershell
-        run: |
-          Write-Host "=== Streaming Engine Diagnostic ==="
-
-          $entryPoints = @(
-            "main.py",
-            "app.py",
-            "run.py",
-            "server.py",
-            "streaming_engine.py"
-          )
-
-          $foundEntryPoint = $null
-
-          foreach ($entry in $entryPoints) {
-            $match = Get-ChildItem -Recurse -Filter $entry -File -ErrorAction SilentlyContinue |
-              Where-Object {
-                $_.FullName -notmatch "\\.git\\" -and
-                $_.FullName -notmatch "\\__pycache__\\" -and
-                $_.FullName -notmatch "\\\.venv\\"
+                $_.FullName -notmatch "\\__pycache__\\"
               } |
               Select-Object -First 1
 
             if ($match) {
-              $foundEntryPoint = $match.FullName
+              $entryPoint = $match.FullName
               break
             }
           }
 
-          if ($null -eq $foundEntryPoint) {
-            Write-Error "No supported Streaming Engine entry point was found."
-            Write-Error "Expected one of: main.py, app.py, run.py, server.py, streaming_engine.py"
-            exit 1
+          if ($null -eq $entryPoint) {
+            Write-Host ""
+            Write-Host "No standard entry point name found."
+            Write-Host "Searching for Python files containing executable code..."
+
+            $allPython = Get-ChildItem -Recurse -Filter *.py -File |
+              Where-Object {
+                $_.FullName -notmatch "\\.git\\" -and
+                $_.FullName -notmatch "\\__pycache__\\"
+              }
+
+            foreach ($file in $allPython) {
+              $content = Get-Content $file.FullName -Raw -ErrorAction SilentlyContinue
+
+              if (
+                $content -match "__main__" -or
+                $content -match "ArgumentParser" -or
+                $content -match "CustomTkinter" -or
+                $content -match "customtkinter" -or
+                $content -match "tkinter" -or
+                $content -match "FastAPI" -or
+                $content -match "Flask"
+              ) {
+                $entryPoint = $file.FullName
+                Write-Host "Possible entry point found:"
+                Write-Host $entryPoint
+                break
+              }
+            }
           }
 
-          Write-Host "Entry point found:"
-          Write-Host $foundEntryPoint
+          if ($null -eq $entryPoint) {
+            Write-Error "Could not automatically determine an application entry point."
+            Write-Host ""
+            Write-Host "The repository DOES contain Python files,"
+            Write-Host "but no obvious launcher was detected."
+            exit 1
+          }
 
           Write-Host ""
-          Write-Host "=== Running Python syntax check ==="
-          python -m py_compile $foundEntryPoint
+          Write-Host "========================================"
+          Write-Host "ENTRY POINT:"
+          Write-Host $entryPoint
+          Write-Host "========================================"
+
+          "ENTRY_POINT=$entryPoint" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Run Python syntax validation
+        shell: powershell
+        run: |
+          Write-Host "========================================"
+          Write-Host "        PYTHON SYNTAX CHECK"
+          Write-Host "========================================"
+
+          Write-Host "Checking:"
+          Write-Host $env:ENTRY_POINT
+
+          python -m py_compile "$env:ENTRY_POINT"
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Python syntax check failed."
+            Write-Error "Python syntax check FAILED."
             exit 1
           }
 
+          Write-Host ""
           Write-Host "Python syntax check: PASS"
 
+      - name: Run application diagnostic
+        shell: powershell
+        run: |
+          Write-Host "========================================"
+          Write-Host "     STREAMING ENGINE DIAGNOSTIC"
+          Write-Host "========================================"
+
+          Write-Host "Entry point:"
+          Write-Host $env:ENTRY_POINT
+
           Write-Host ""
-          Write-Host "=== Attempting application help/diagnostic ==="
+          Write-Host "Running application with --help..."
 
-          python $foundEntryPoint --help
+          python "$env:ENTRY_POINT" --help
 
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Application does not provide --help or returned a non-zero status."
-            Write-Host "Syntax check passed, but application diagnostic could not be confirmed."
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host ""
+            Write-Host "Application diagnostic: PASS"
           }
           else {
-            Write-Host "Application diagnostic: PASS"
+            Write-Host ""
+            Write-Host "Application does not support --help."
+            Write-Host "This is NOT automatically treated as a failure."
+            Write-Host "Python syntax validation already passed."
           }
 
       - name: Final status
         shell: powershell
         run: |
-          Write-Host "===================================="
-          Write-Host "Streaming Engine workflow completed"
-          Write-Host "===================================="
-
-
-
-
-  
+          Write-Host "========================================"
+          Write-Host "   STREAMING ENGINE CHECK COMPLETED"
+          Write-Host "========================================"
+          Write-Host ""
+          Write-Host "Repository checkout: PASS"
+          Write-Host "Python environment: PASS"
+          Write-Host "FFmpeg: PASS"
+          Write-Host "Python project detection: PASS"
+          Write-Host "Syntax validation: PASS"
+          Write-Host ""
+          Write-Host "Streaming Engine CI diagnostic completed."
