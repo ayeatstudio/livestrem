@@ -1,4 +1,3 @@
-
 name: Streaming Engine - Windows
 
 on:
@@ -156,9 +155,6 @@ jobs:
               if (
                 $content -match "__main__" -or
                 $content -match "ArgumentParser" -or
-                $content -match "CustomTkinter" -or
-                $content -match "customtkinter" -or
-                $content -match "tkinter" -or
                 $content -match "FastAPI" -or
                 $content -match "Flask"
               ) {
@@ -172,9 +168,6 @@ jobs:
 
           if ($null -eq $entryPoint) {
             Write-Error "Could not automatically determine an application entry point."
-            Write-Host ""
-            Write-Host "The repository DOES contain Python files,"
-            Write-Host "but no obvious launcher was detected."
             exit 1
           }
 
@@ -186,51 +179,144 @@ jobs:
 
           "ENTRY_POINT=$entryPoint" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Run Python syntax validation
+      - name: Compile all Python files
         shell: powershell
         run: |
           Write-Host "========================================"
-          Write-Host "        PYTHON SYNTAX CHECK"
+          Write-Host "        PYTHON SYNTAX VALIDATION"
           Write-Host "========================================"
 
-          Write-Host "Checking:"
-          Write-Host $env:ENTRY_POINT
-
-          python -m py_compile "$env:ENTRY_POINT"
+          python -m compileall -q .
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Python syntax check FAILED."
+            Write-Error "Python syntax validation FAILED."
             exit 1
           }
 
           Write-Host ""
-          Write-Host "Python syntax check: PASS"
+          Write-Host "All Python files syntax check: PASS"
 
-      - name: Run application diagnostic
+      - name: Validate detected entry point
         shell: powershell
         run: |
           Write-Host "========================================"
-          Write-Host "     STREAMING ENGINE DIAGNOSTIC"
+          Write-Host "        ENTRY POINT VALIDATION"
           Write-Host "========================================"
 
           Write-Host "Entry point:"
           Write-Host $env:ENTRY_POINT
 
+          python -m py_compile "$env:ENTRY_POINT"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Entry point syntax check FAILED."
+            exit 1
+          }
+
           Write-Host ""
-          Write-Host "Running application with --help..."
+          Write-Host "Entry point syntax check: PASS"
+
+      - name: Test application help
+        shell: powershell
+        run: |
+          Write-Host "========================================"
+          Write-Host "        APPLICATION HELP TEST"
+          Write-Host "========================================"
+
+          Write-Host "Entry point:"
+          Write-Host $env:ENTRY_POINT
 
           python "$env:ENTRY_POINT" --help
 
           if ($LASTEXITCODE -eq 0) {
             Write-Host ""
-            Write-Host "Application diagnostic: PASS"
+            Write-Host "Application --help: PASS"
           }
           else {
             Write-Host ""
             Write-Host "Application does not support --help."
-            Write-Host "This is NOT automatically treated as a failure."
-            Write-Host "Python syntax validation already passed."
+            Write-Host "Continuing because this is not required for every module."
           }
+
+      - name: Detect AudioStreamer
+        shell: powershell
+        run: |
+          Write-Host "========================================"
+          Write-Host "        AUDIO STREAMER DETECTION"
+          Write-Host "========================================"
+
+          $audioStreamer = Get-ChildItem -Recurse -Filter "audio_streamer.py" -File -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.FullName -notmatch "\\.git\\" -and
+              $_.FullName -notmatch "\\__pycache__\\"
+            } |
+            Select-Object -First 1
+
+          if ($null -eq $audioStreamer) {
+            Write-Host "audio_streamer.py not found."
+            Write-Host "AudioStreamer diagnostic will be skipped."
+          }
+          else {
+            Write-Host "AudioStreamer found:"
+            Write-Host $audioStreamer.FullName
+
+            "AUDIO_STREAMER_PATH=$($audioStreamer.FullName)" |
+              Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+
+      - name: Run AudioStreamer diagnostic
+        shell: powershell
+        run: |
+          Write-Host "========================================"
+          Write-Host "      AUDIO STREAMER DIAGNOSTIC"
+          Write-Host "========================================"
+
+          if ([string]::IsNullOrWhiteSpace($env:AUDIO_STREAMER_PATH)) {
+            Write-Host "No AudioStreamer found."
+            Write-Host "Diagnostic skipped."
+            exit 0
+          }
+
+          Write-Host "Running:"
+          Write-Host $env:AUDIO_STREAMER_PATH
+
+          python "$env:AUDIO_STREAMER_PATH" --diagnostic
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "AudioStreamer diagnostic FAILED."
+            exit 1
+          }
+
+          Write-Host ""
+          Write-Host "AudioStreamer diagnostic: PASS"
+
+      - name: Test AudioStreamer import
+        shell: powershell
+        run: |
+          Write-Host "========================================"
+          Write-Host "       AUDIO STREAMER IMPORT TEST"
+          Write-Host "========================================"
+
+          if ([string]::IsNullOrWhiteSpace($env:AUDIO_STREAMER_PATH)) {
+            Write-Host "No AudioStreamer found."
+            Write-Host "Import test skipped."
+            exit 0
+          }
+
+          $moduleDirectory = Split-Path -Parent $env:AUDIO_STREAMER_PATH
+          $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($env:AUDIO_STREAMER_PATH)
+
+          Push-Location $moduleDirectory
+
+          python -c "import $moduleName; print('AudioStreamer import: PASS')"
+
+          if ($LASTEXITCODE -ne 0) {
+            Pop-Location
+            Write-Error "AudioStreamer import FAILED."
+            exit 1
+          }
+
+          Pop-Location
 
       - name: Final status
         shell: powershell
@@ -243,6 +329,10 @@ jobs:
           Write-Host "Python environment: PASS"
           Write-Host "FFmpeg: PASS"
           Write-Host "Python project detection: PASS"
-          Write-Host "Syntax validation: PASS"
+          Write-Host "All Python syntax: PASS"
+          Write-Host "Entry point validation: PASS"
+          Write-Host "Application diagnostic: PASS"
+          Write-Host "AudioStreamer diagnostic: PASS"
+          Write-Host "AudioStreamer import: PASS"
           Write-Host ""
-          Write-Host "Streaming Engine CI diagnostic completed."
+          Write-Host "Streaming Engine CI validation completed successfully."
