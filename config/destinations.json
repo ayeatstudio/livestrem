@@ -1,0 +1,60 @@
+{
+  "destinations": [
+    {
+      "id": "youtube_01",
+      "platform": "youtube",
+      "name": "YouTube Channel 1",
+      "rtmp_url": "rtmp://a.rtmp.youtube.com/live2",
+      "stream_key": "9cpp-0chq-jefg-xxjp-4ph9",
+      "enabled": true
+    },
+    {
+      "id": "youtube_02",
+      "platform": "youtube",
+      "name": "YouTube Channel 2",
+      "rtmp_url": "",
+      "stream_key": "",
+      "enabled": false
+    },
+    {
+      "id": "youtube_03",
+      "platform": "youtube",
+      "name": "YouTube Channel 3",
+      "rtmp_url": "",
+      "stream_key": "",
+      "enabled": false
+    },
+    {
+      "id": "youtube_04",
+      "platform": "youtube",
+      "name": "YouTube Channel 4",
+      "rtmp_url": "",
+      "stream_key": "",
+      "enabled": false
+    },
+    {
+      "id": "facebook_01",
+      "platform": "facebook",
+      "name": "Facebook Page 1",
+      "rtmp_url": "",
+      "stream_key": "",
+      "enabled": false
+    },
+    {
+      "id": "facebook_02",
+      "platform": "facebook",
+      "name": "Facebook Page 2",
+      "rtmp_url": "",
+      "stream_key": "",
+      "enabled": false
+    },
+    {
+      "id": "instagram_01",
+      "platform": "instagram",
+      "name": "Instagram Account 1",
+      "rtmp_url": "",
+      "stream_key": "",
+      "enabled": false
+    }
+  ]
+}

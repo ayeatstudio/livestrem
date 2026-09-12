@@ -1,0 +1,47 @@
+{
+  "youtube_01": {
+    "folder_name": "YouTube 01",
+    "folder_id": "1PCpIZpAGVeZnXfpyzLMeQIupofPYr6Hr",
+    "videos": [
+      {
+        "index": 1,
+        "drive_file_id": "15HZs0uIJN7PMQ9rcnsVv0vMdaq1ZSv7L",
+        "name": "Episode 1 –The Boy Who Loved the Morning Sky.mp4",
+        "mime_type": "video/mp4",
+        "size": "369126721",
+        "modified_time": "2026-06-29T16:50:54.000Z",
+        "local_path": "D:\\streaming_engine\\cache\\youtube_01\\Episode 1 –The Boy Who Loved the Morning Sky.mp4"
+      }
+    ]
+  },
+  "youtube_02": {
+    "folder_name": "YouTube 02",
+    "folder_id": "13ds8dDaknvYGl8GQhjguiwFd3Z_IuqhH",
+    "videos": []
+  },
+  "youtube_03": {
+    "folder_name": "YouTube 03",
+    "folder_id": "1NavpjELb_gmPwp7mjpk8kcZN5GBr8Cqs",
+    "videos": []
+  },
+  "youtube_04": {
+    "folder_name": "YouTube 04",
+    "folder_id": "1mRjbN-pSPuzcZlf9y0Gmr7g8UgjQA2UM",
+    "videos": []
+  },
+  "facebook_01": {
+    "folder_name": "Facebook 01",
+    "folder_id": "1EOMxjNIu9yusoZNmKElX-NPUAU66iFxF",
+    "videos": []
+  },
+  "facebook_02": {
+    "folder_name": "Facebook 02",
+    "folder_id": "1slEYMUxRFt5TxAHiIQzNyGBh2S2lCFhg",
+    "videos": []
+  },
+  "instagram_01": {
+    "folder_name": "Instagram 01",
+    "folder_id": "1xmf9Ha0N1Fu12oy2P-LOB7FaI--_kaeL",
+    "videos": []
+  }
+}
