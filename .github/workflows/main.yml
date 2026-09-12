@@ -1,0 +1,95 @@
+```yaml
+name: Streaming Engine - Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  streaming-engine:
+    name: Setup and Test Streaming Engine
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Show Windows environment
+        shell: powershell
+        run: |
+          Write-Host "=== Windows Environment ==="
+          Write-Host "OS: $env:OS"
+          Write-Host "Computer: $env:COMPUTERNAME"
+          Write-Host "User: $env:USERNAME"
+          Write-Host "PowerShell:"
+          $PSVersionTable.PSVersion
+
+      - name: Check Python
+        shell: powershell
+        run: |
+          Write-Host "=== Python ==="
+          python --version
+          python -m pip --version
+
+      - name: Upgrade pip
+        shell: powershell
+        run: |
+          python -m pip install --upgrade pip
+
+      - name: Install FFmpeg
+        shell: powershell
+        run: |
+          Write-Host "=== Installing FFmpeg ==="
+          choco install ffmpeg -y --no-progress
+
+      - name: Verify FFmpeg
+        shell: powershell
+        run: |
+          Write-Host "=== FFmpeg ==="
+          ffmpeg -version
+
+      - name: Install Python dependencies
+        shell: powershell
+        run: |
+          if (Test-Path "requirements.txt") {
+            Write-Host "Installing requirements.txt"
+            python -m pip install -r requirements.txt
+          }
+          else {
+            Write-Host "requirements.txt not found - skipping"
+          }
+
+      - name: Inspect project
+        shell: powershell
+        run: |
+          Write-Host "=== Repository files ==="
+          Get-ChildItem -Force
+          Write-Host ""
+          Write-Host "=== Python files ==="
+          Get-ChildItem -Recurse -Filter *.py | Select-Object FullName
+
+      - name: Run project diagnostic
+        shell: powershell
+        run: |
+          Write-Host "=== Streaming Engine Diagnostic ==="
+
+          if (Test-Path "main.py") {
+            python main.py --help
+          }
+          elseif (Test-Path "app.py") {
+            python app.py --help
+          }
+          else {
+            Write-Host "No main.py or app.py found."
+            Write-Host "Repository setup completed successfully."
+          }
+
+      - name: Final status
+        shell: powershell
+        run: |
+          Write-Host "===================================="
+          Write-Host "Streaming Engine workflow completed"
+          Write-Host "===================================="
+```
