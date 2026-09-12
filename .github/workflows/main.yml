@@ -1,4 +1,4 @@
-
+```yaml
 name: Streaming Engine - Windows
 
 on:
@@ -57,33 +57,137 @@ jobs:
             Write-Host "Installing requirements.txt"
             python -m pip install -r requirements.txt
           }
+          elseif (Test-Path "pyproject.toml") {
+            Write-Host "Installing project from pyproject.toml"
+            python -m pip install .
+          }
+          elseif (Test-Path "setup.py") {
+            Write-Host "Installing project from setup.py"
+            python -m pip install .
+          }
           else {
-            Write-Host "requirements.txt not found - skipping"
+            Write-Host "No Python dependency file found."
           }
 
       - name: Inspect project
         shell: powershell
         run: |
-          Write-Host "=== Repository files ==="
+          Write-Host "=== Repository root ==="
           Get-ChildItem -Force
+
           Write-Host ""
           Write-Host "=== Python files ==="
-          Get-ChildItem -Recurse -Filter *.py | Select-Object FullName
+
+          $pythonFiles = Get-ChildItem -Recurse -Filter *.py -File |
+            Where-Object {
+              $_.FullName -notmatch "\\.git\\" -and
+              $_.FullName -notmatch "\\__pycache__\\" -and
+              $_.FullName -notmatch "\\\.venv\\"
+            }
+
+          if ($pythonFiles) {
+            $pythonFiles | ForEach-Object {
+              Write-Host $_.FullName
+            }
+          }
+          else {
+            Write-Host "NO PYTHON FILES FOUND"
+          }
+
+      - name: Inspect project entry points
+        shell: powershell
+        run: |
+          Write-Host "=== Searching for project entry points ==="
+
+          $candidates = @(
+            "main.py",
+            "app.py",
+            "run.py",
+            "server.py",
+            "streaming_engine.py"
+          )
+
+          $found = @()
+
+          foreach ($candidate in $candidates) {
+            $matches = Get-ChildItem -Recurse -Filter $candidate -File -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.FullName -notmatch "\\.git\\" -and
+                $_.FullName -notmatch "\\__pycache__\\" -and
+                $_.FullName -notmatch "\\\.venv\\"
+              }
+
+            foreach ($match in $matches) {
+              $found += $match.FullName
+              Write-Host "FOUND: $($match.FullName)"
+            }
+          }
+
+          if ($found.Count -eq 0) {
+            Write-Host "No standard entry point found."
+          }
 
       - name: Run project diagnostic
         shell: powershell
         run: |
           Write-Host "=== Streaming Engine Diagnostic ==="
 
-          if (Test-Path "main.py") {
-            python main.py --help
+          $entryPoints = @(
+            "main.py",
+            "app.py",
+            "run.py",
+            "server.py",
+            "streaming_engine.py"
+          )
+
+          $foundEntryPoint = $null
+
+          foreach ($entry in $entryPoints) {
+            $match = Get-ChildItem -Recurse -Filter $entry -File -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.FullName -notmatch "\\.git\\" -and
+                $_.FullName -notmatch "\\__pycache__\\" -and
+                $_.FullName -notmatch "\\\.venv\\"
+              } |
+              Select-Object -First 1
+
+            if ($match) {
+              $foundEntryPoint = $match.FullName
+              break
+            }
           }
-          elseif (Test-Path "app.py") {
-            python app.py --help
+
+          if ($null -eq $foundEntryPoint) {
+            Write-Error "No supported Streaming Engine entry point was found."
+            Write-Error "Expected one of: main.py, app.py, run.py, server.py, streaming_engine.py"
+            exit 1
+          }
+
+          Write-Host "Entry point found:"
+          Write-Host $foundEntryPoint
+
+          Write-Host ""
+          Write-Host "=== Running Python syntax check ==="
+          python -m py_compile $foundEntryPoint
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Python syntax check failed."
+            exit 1
+          }
+
+          Write-Host "Python syntax check: PASS"
+
+          Write-Host ""
+          Write-Host "=== Attempting application help/diagnostic ==="
+
+          python $foundEntryPoint --help
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Application does not provide --help or returned a non-zero status."
+            Write-Host "Syntax check passed, but application diagnostic could not be confirmed."
           }
           else {
-            Write-Host "No main.py or app.py found."
-            Write-Host "Repository setup completed successfully."
+            Write-Host "Application diagnostic: PASS"
           }
 
       - name: Final status
@@ -92,4 +196,8 @@ jobs:
           Write-Host "===================================="
           Write-Host "Streaming Engine workflow completed"
           Write-Host "===================================="
+```
 
+
+
+  
