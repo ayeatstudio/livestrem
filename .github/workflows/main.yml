@@ -1,4 +1,4 @@
-```yaml
+yaml
 name: Streaming Engine - Windows
 
 on:
@@ -196,7 +196,7 @@ jobs:
           Write-Host "===================================="
           Write-Host "Streaming Engine workflow completed"
           Write-Host "===================================="
-```
+
 
 
 
