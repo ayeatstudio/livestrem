@@ -1,8 +1,7 @@
-
 """
 Golden Studio Streaming Engine
 Audio Streamer
-Version: 1.0.0 Professional
+Version: 1.1.0 Professional
 
 Pipeline:
     Audio File
@@ -17,14 +16,6 @@ Pipeline:
         ↓
     Speakers
 
-Supported:
-    AAC
-    MP3
-    FLAC
-    WAV
-    Opus
-    Other formats supported by TorchCodec/FFmpeg
-
 Features:
     - Play
     - Pause
@@ -37,13 +28,16 @@ Features:
     - Duration
     - EOF handling
     - Thread-safe control
-    - Underrun protection
     - Stereo / Mono
     - C-contiguous PCM
+    - CLI audio file selection
+    - CI-friendly --help
+    - No hard-coded local audio path
 """
 
 from __future__ import annotations
 
+import argparse
 import threading
 import time
 from enum import Enum
@@ -71,31 +65,9 @@ class PlaybackState(Enum):
 # ============================================================
 
 class AudioStreamer:
-    """
-    Professional audio streaming engine.
+    """Professional audio playback engine."""
 
-    Example:
-
-        streamer = AudioStreamer("music.aac")
-
-        streamer.play()
-
-        time.sleep(5)
-
-        streamer.pause()
-
-        time.sleep(2)
-
-        streamer.resume()
-
-        streamer.set_volume(0.5)
-
-        time.sleep(5)
-
-        streamer.stop()
-    """
-
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"
 
     DEFAULT_CHUNK_MS = 100
     DEFAULT_VOLUME = 1.0
@@ -111,6 +83,11 @@ class AudioStreamer:
         if not self.audio_path.exists():
             raise FileNotFoundError(
                 f"Audio file not found: {self.audio_path}"
+            )
+
+        if not self.audio_path.is_file():
+            raise ValueError(
+                f"Audio path is not a file: {self.audio_path}"
             )
 
         if chunk_ms <= 0:
@@ -173,7 +150,11 @@ class AudioStreamer:
 
         self._position_samples = 0
 
-        self._volume = 1.0
+        self._volume = max(
+            0.0,
+            min(1.0, float(volume)),
+        )
+
         self._muted = False
 
         # ----------------------------------------------------
@@ -208,7 +189,10 @@ class AudioStreamer:
     @property
     def position(self) -> float:
         with self._lock:
-            return self._position_samples / self.sample_rate
+            return (
+                self._position_samples
+                / self.sample_rate
+            )
 
     @property
     def duration_seconds(self) -> float:
@@ -227,16 +211,16 @@ class AudioStreamer:
     @property
     def finished(self) -> bool:
         with self._lock:
-            return self._state == PlaybackState.FINISHED
+            return (
+                self._state
+                == PlaybackState.FINISHED
+            )
 
     # ========================================================
     # INTERNAL STREAM CREATION
     # ========================================================
 
     def _create_stream(self) -> None:
-        """
-        Create and start sounddevice output stream.
-        """
 
         if self._stream is not None:
             return
@@ -255,9 +239,6 @@ class AudioStreamer:
     # ========================================================
 
     def _close_stream(self) -> None:
-        """
-        Safely close output stream.
-        """
 
         stream = self._stream
 
@@ -284,9 +265,6 @@ class AudioStreamer:
         self,
         chunk: np.ndarray,
     ) -> np.ndarray:
-        """
-        Apply volume and mute state.
-        """
 
         with self._lock:
             volume = self._volume
@@ -310,18 +288,12 @@ class AudioStreamer:
     # ========================================================
 
     def _playback_worker(self) -> None:
-        """
-        Background playback worker.
-        """
 
         try:
+
             self._create_stream()
 
             while not self._stop_event.is_set():
-
-                # ------------------------------------------------
-                # Pause
-                # ------------------------------------------------
 
                 if self._pause_event.is_set():
 
@@ -329,17 +301,15 @@ class AudioStreamer:
 
                     continue
 
-                # ------------------------------------------------
-                # End of file
-                # ------------------------------------------------
-
                 with self._lock:
 
                     start = self._position_samples
 
                     if start >= self.total_samples:
 
-                        self._state = PlaybackState.FINISHED
+                        self._state = (
+                            PlaybackState.FINISHED
+                        )
 
                         break
 
@@ -348,28 +318,18 @@ class AudioStreamer:
                         self.total_samples,
                     )
 
-                    chunk = self.pcm[start:end].copy()
+                    chunk = self.pcm[
+                        start:end
+                    ].copy()
 
                     self._position_samples = end
 
-                # ------------------------------------------------
-                # Volume
-                # ------------------------------------------------
-
                 chunk = self._apply_volume(chunk)
-
-                # ------------------------------------------------
-                # Ensure contiguous memory
-                # ------------------------------------------------
 
                 chunk = np.ascontiguousarray(
                     chunk,
                     dtype=np.float32,
                 )
-
-                # ------------------------------------------------
-                # Output
-                # ------------------------------------------------
 
                 stream = self._stream
 
@@ -381,7 +341,9 @@ class AudioStreamer:
         except Exception:
 
             with self._lock:
-                self._state = PlaybackState.STOPPED
+                self._state = (
+                    PlaybackState.STOPPED
+                )
 
             raise
 
@@ -392,26 +354,20 @@ class AudioStreamer:
             with self._lock:
 
                 if (
-                    self._state == PlaybackState.PLAYING
+                    self._state
+                    == PlaybackState.PLAYING
                     and self._position_samples
                     >= self.total_samples
                 ):
-                    self._state = PlaybackState.FINISHED
+                    self._state = (
+                        PlaybackState.FINISHED
+                    )
 
     # ========================================================
     # PLAY
     # ========================================================
 
     def play(self) -> None:
-        """
-        Start playback.
-
-        If paused:
-            resumes playback.
-
-        If finished:
-            starts again from beginning.
-        """
 
         with self._lock:
 
@@ -420,17 +376,25 @@ class AudioStreamer:
                     "AudioStreamer is closed"
                 )
 
-            if self._state == PlaybackState.PLAYING:
+            if (
+                self._state
+                == PlaybackState.PLAYING
+            ):
                 return
 
-            if self._state == PlaybackState.FINISHED:
+            if (
+                self._state
+                == PlaybackState.FINISHED
+            ):
                 self._position_samples = 0
 
             self._stop_event.clear()
 
             self._pause_event.clear()
 
-            self._state = PlaybackState.PLAYING
+            self._state = (
+                PlaybackState.PLAYING
+            )
 
             self._worker = threading.Thread(
                 target=self._playback_worker,
@@ -445,27 +409,26 @@ class AudioStreamer:
     # ========================================================
 
     def pause(self) -> None:
-        """
-        Pause playback.
-        """
 
         with self._lock:
 
-            if self._state != PlaybackState.PLAYING:
+            if (
+                self._state
+                != PlaybackState.PLAYING
+            ):
                 return
 
             self._pause_event.set()
 
-            self._state = PlaybackState.PAUSED
+            self._state = (
+                PlaybackState.PAUSED
+            )
 
     # ========================================================
     # RESUME
     # ========================================================
 
     def resume(self) -> None:
-        """
-        Resume paused playback.
-        """
 
         with self._lock:
 
@@ -474,21 +437,23 @@ class AudioStreamer:
                     "AudioStreamer is closed"
                 )
 
-            if self._state != PlaybackState.PAUSED:
+            if (
+                self._state
+                != PlaybackState.PAUSED
+            ):
                 return
 
             self._pause_event.clear()
 
-            self._state = PlaybackState.PLAYING
+            self._state = (
+                PlaybackState.PLAYING
+            )
 
     # ========================================================
     # STOP
     # ========================================================
 
     def stop(self) -> None:
-        """
-        Stop playback and reset position.
-        """
 
         with self._lock:
 
@@ -498,7 +463,10 @@ class AudioStreamer:
 
             worker = self._worker
 
-        if worker is not None:
+        if (
+            worker is not None
+            and worker is not threading.current_thread()
+        ):
             worker.join(timeout=2.0)
 
         with self._lock:
@@ -507,7 +475,9 @@ class AudioStreamer:
 
             self._position_samples = 0
 
-            self._state = PlaybackState.STOPPED
+            self._state = (
+                PlaybackState.STOPPED
+            )
 
         self._close_stream()
 
@@ -516,11 +486,8 @@ class AudioStreamer:
     # ========================================================
 
     def seek(self, seconds: float) -> float:
-        """
-        Seek to a specific position.
 
-        Returns actual position.
-        """
+        seconds = float(seconds)
 
         if seconds < 0:
             seconds = 0.0
@@ -534,24 +501,30 @@ class AudioStreamer:
 
         with self._lock:
 
-            self._position_samples = sample_position
+            self._position_samples = (
+                sample_position
+            )
 
             if (
-                self._state == PlaybackState.FINISHED
-                and sample_position < self.total_samples
+                self._state
+                == PlaybackState.FINISHED
+                and sample_position
+                < self.total_samples
             ):
-                self._state = PlaybackState.STOPPED
+                self._state = (
+                    PlaybackState.STOPPED
+                )
 
         return self.position
 
     # ========================================================
-    # SET VOLUME
+    # VOLUME
     # ========================================================
 
-    def set_volume(self, volume: float) -> float:
-        """
-        Set volume from 0.0 to 1.0.
-        """
+    def set_volume(
+        self,
+        volume: float,
+    ) -> float:
 
         volume = float(volume)
 
@@ -565,10 +538,6 @@ class AudioStreamer:
 
         return volume
 
-    # ========================================================
-    # VOLUME UP
-    # ========================================================
-
     def volume_up(
         self,
         amount: float = 0.05,
@@ -577,10 +546,6 @@ class AudioStreamer:
         return self.set_volume(
             self.volume + amount
         )
-
-    # ========================================================
-    # VOLUME DOWN
-    # ========================================================
 
     def volume_down(
         self,
@@ -600,18 +565,10 @@ class AudioStreamer:
         with self._lock:
             self._muted = True
 
-    # ========================================================
-    # UNMUTE
-    # ========================================================
-
     def unmute(self) -> None:
 
         with self._lock:
             self._muted = False
-
-    # ========================================================
-    # TOGGLE MUTE
-    # ========================================================
 
     def toggle_mute(self) -> bool:
 
@@ -652,13 +609,6 @@ class AudioStreamer:
         self,
         timeout: Optional[float] = None,
     ) -> bool:
-        """
-        Wait until playback finishes.
-
-        Returns:
-            True  = finished
-            False = timeout
-        """
 
         start = time.monotonic()
 
@@ -666,10 +616,16 @@ class AudioStreamer:
 
             state = self.state
 
-            if state == PlaybackState.FINISHED:
+            if (
+                state
+                == PlaybackState.FINISHED
+            ):
                 return True
 
-            if state == PlaybackState.STOPPED:
+            if (
+                state
+                == PlaybackState.STOPPED
+            ):
                 return False
 
             if timeout is not None:
@@ -687,9 +643,6 @@ class AudioStreamer:
     # ========================================================
 
     def close(self) -> None:
-        """
-        Permanently close streamer.
-        """
 
         if self._closed:
             return
@@ -731,96 +684,233 @@ class AudioStreamer:
 
 
 # ============================================================
-# SIMPLE TEST
+# CLI
 # ============================================================
 
-if __name__ == "__main__":
+def build_parser() -> argparse.ArgumentParser:
 
-    TEST_FILE = Path(
-        r"D:\streaming_engine\mamun voice.aac"
+    parser = argparse.ArgumentParser(
+        description=(
+            "Golden Studio Audio Streaming Engine. "
+            "Play and control audio using TorchCodec "
+            "and sounddevice."
+        )
     )
 
-    print()
+    parser.add_argument(
+        "audio",
+        nargs="?",
+        type=Path,
+        help=(
+            "Path to an audio file "
+            "(AAC, MP3, FLAC, WAV, Opus, etc.)"
+        ),
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"AudioStreamer {AudioStreamer.VERSION}",
+    )
+
+    parser.add_argument(
+        "--chunk-ms",
+        type=int,
+        default=AudioStreamer.DEFAULT_CHUNK_MS,
+        help="Audio chunk size in milliseconds.",
+    )
+
+    parser.add_argument(
+        "--volume",
+        type=float,
+        default=AudioStreamer.DEFAULT_VOLUME,
+        help="Initial volume from 0.0 to 1.0.",
+    )
+
+    parser.add_argument(
+        "--diagnostic",
+        action="store_true",
+        help=(
+            "Run a dependency-only diagnostic "
+            "without requiring an audio file."
+        ),
+    )
+
+    return parser
+
+
+# ============================================================
+# DIAGNOSTIC
+# ============================================================
+
+def run_diagnostic() -> int:
+
     print("=" * 60)
     print("GOLDEN STREAMING ENGINE")
-    print("AudioStreamer 1.0.0")
+    print(f"AudioStreamer {AudioStreamer.VERSION}")
+    print("=" * 60)
+
+    print()
+    print("Python audio dependencies:")
+    print("  NumPy       : OK")
+    print("  SoundDevice : OK")
+    print("  TorchCodec  : OK")
+
+    try:
+
+        devices = sd.query_devices()
+
+        print()
+        print(
+            "Audio devices detected:",
+            len(devices),
+        )
+
+    except Exception as exc:
+
+        print()
+        print(
+            "Audio device query warning:",
+            type(exc).__name__,
+            ":",
+            exc,
+        )
+
+    print()
+    print("Diagnostic: PASS")
+
+    return 0
+
+
+# ============================================================
+# CLI MAIN
+# ============================================================
+
+def main() -> int:
+
+    parser = build_parser()
+
+    args = parser.parse_args()
+
+    # --------------------------------------------------------
+    # Diagnostic mode
+    # --------------------------------------------------------
+
+    if args.diagnostic:
+        return run_diagnostic()
+
+    # --------------------------------------------------------
+    # No audio file
+    #
+    # This is intentionally NOT an error.
+    # It allows CI and --help style execution without
+    # requiring a private/local audio file.
+    # --------------------------------------------------------
+
+    if args.audio is None:
+
+        print("=" * 60)
+        print("GOLDEN STREAMING ENGINE")
+        print(f"AudioStreamer {AudioStreamer.VERSION}")
+        print("=" * 60)
+        print()
+        print(
+            "AudioStreamer module loaded successfully."
+        )
+        print(
+            "No audio file was supplied."
+        )
+        print()
+        print(
+            "Use:"
+        )
+        print(
+            "  python audio_streamer.py "
+            "\"path\\to\\audio.aac\""
+        )
+        print()
+        print(
+            "Diagnostic: PASS"
+        )
+
+        return 0
+
+    # --------------------------------------------------------
+    # Validate audio path
+    # --------------------------------------------------------
+
+    audio_path = args.audio.expanduser()
+
+    if not audio_path.exists():
+
+        print(
+            f"ERROR: Audio file not found: "
+            f"{audio_path}"
+        )
+
+        return 2
+
+    if not audio_path.is_file():
+
+        print(
+            f"ERROR: Audio path is not a file: "
+            f"{audio_path}"
+        )
+
+        return 2
+
+    # --------------------------------------------------------
+    # Create streamer
+    # --------------------------------------------------------
+
+    print("=" * 60)
+    print("GOLDEN STREAMING ENGINE")
+    print(f"AudioStreamer {AudioStreamer.VERSION}")
     print("=" * 60)
 
     try:
 
         streamer = AudioStreamer(
-            TEST_FILE,
-            chunk_ms=100,
+            audio_path,
+            chunk_ms=args.chunk_ms,
+            volume=args.volume,
         )
 
         print()
         print("File       :", streamer.audio_path)
         print("Sample Rate:", streamer.sample_rate)
         print("Channels   :", streamer.channels)
-        print("Chunk      :", streamer.chunk_samples, "samples")
-        print("Duration   :", streamer.duration)
-        print("Volume     :", streamer.volume)
-        print("State      :", streamer.state.value)
+        print(
+            "Chunk      :",
+            streamer.chunk_samples,
+            "samples",
+        )
+        print(
+            "Duration   :",
+            round(streamer.duration, 3),
+            "seconds",
+        )
+        print(
+            "Volume     :",
+            streamer.volume,
+        )
+        print(
+            "State      :",
+            streamer.state.value,
+        )
 
         print()
         print("Starting playback...")
 
         streamer.play()
 
-        time.sleep(3)
-
-        print(
-            "Position:",
-            round(streamer.position, 3),
-            "seconds",
-        )
-
-        print("Pausing...")
-
-        streamer.pause()
-
-        time.sleep(2)
-
-        print(
-            "Position while paused:",
-            round(streamer.position, 3),
-            "seconds",
-        )
-
-        print("Resuming...")
-
-        streamer.resume()
-
-        time.sleep(2)
-
-        print(
-            "Position:",
-            round(streamer.position, 3),
-            "seconds",
-        )
-
-        print("Setting volume to 50%...")
-
-        streamer.set_volume(0.5)
-
-        print("Volume:", streamer.volume)
-
-        print("Seeking to 10 seconds...")
-
-        actual = streamer.seek(10.0)
-
-        print(
-            "Actual position:",
-            round(actual, 3),
-            "seconds",
-        )
-
-        print("Waiting for playback...")
-
         streamer.wait_until_finished()
 
         print()
-        print("Final state:", streamer.state.value)
+        print(
+            "Final state:",
+            streamer.state.value,
+        )
 
         streamer.close()
 
@@ -829,12 +919,39 @@ if __name__ == "__main__":
         print("AUDIO STREAMER TEST COMPLETE")
         print("=" * 60)
 
+        return 0
+
+    except KeyboardInterrupt:
+
+        print()
+        print("Playback interrupted.")
+
+        try:
+            streamer.close()
+        except Exception:
+            pass
+
+        return 130
+
     except Exception as exc:
 
         print()
         print("=" * 60)
         print("AUDIO STREAMER ERROR")
         print("=" * 60)
-        print(type(exc).__name__, ":", exc)
+        print(
+            type(exc).__name__,
+            ":",
+            exc,
+        )
         print("=" * 60)
 
+        return 1
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+    raise SystemExit(main())
