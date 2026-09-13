@@ -318,6 +318,23 @@ jobs:
 
           Pop-Location
 
+      - name: Test StreamingEngine lifecycle
+        shell: powershell
+        run: |
+          Write-Host "========================================"
+          Write-Host "     STREAMING ENGINE LIFECYCLE TEST"
+          Write-Host "========================================"
+
+          python -c "from engine import StreamingEngine; e=StreamingEngine(); print('Engine created:', not e.is_running); e.start(); print('Engine started:', e.is_running); e.shutdown(); print('Engine shutdown:', not e.is_running); assert not e.is_running; print('ENGINE LIFECYCLE: PASS')"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "StreamingEngine lifecycle test FAILED."
+            exit 1
+          }
+
+          Write-Host ""
+          Write-Host "StreamingEngine lifecycle: PASS"
+
       - name: Final status
         shell: powershell
         run: |
@@ -334,5 +351,6 @@ jobs:
           Write-Host "Application diagnostic: PASS"
           Write-Host "AudioStreamer diagnostic: PASS"
           Write-Host "AudioStreamer import: PASS"
+          Write-Host "StreamingEngine lifecycle: PASS"
           Write-Host ""
           Write-Host "Streaming Engine CI validation completed successfully."
